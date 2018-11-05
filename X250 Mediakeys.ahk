@@ -18,8 +18,6 @@ main(), return
 
 main()
 {
-	global oldHKVal := 0
-
 	if (!A_IsAdmin) {
 		isUiAccess := True
 		if (DllCall("Advapi32\OpenProcessToken", "Ptr", DllCall("GetCurrentProcess", "Ptr"), "UInt", TOKEN_QUERY := 0x0008, "Ptr*", hToken)) {
@@ -64,15 +62,14 @@ main()
 		SetRegView Default
 	}
 
-	RegRead, oldHKVal, HKEY_LOCAL_MACHINE, SYSTEM\CurrentControlSet\Services\IBMPMSVC\Parameters\Notification
 	OnExit("AtExit")
-	StartWTSMonitoring()
+	,StartWTSMonitoring()
 	SetTimer, StartMonitoring, -0
 }
 
 StartMonitoring()
 {
-	global watchReg, oldHKVal, scriptSessionID, inScriptSession
+	global watchReg, inScriptSession
 	MsgWaitForMultipleObjectsEx := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "user32.dll", "Ptr"), "AStr", "MsgWaitForMultipleObjectsEx", "Ptr")
 	,RegOpenKeyExW := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "advapi32.dll", "Ptr"), "AStr", "RegOpenKeyExW", "Ptr")
 	,RegNotifyChangeKeyValue := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "advapi32.dll", "Ptr"), "AStr", "RegNotifyChangeKeyValue", "Ptr")
@@ -86,10 +83,13 @@ StartMonitoring()
 	,REG_NOTIFY_CHANGE_LAST_SET := 0x00000004
 
 	watchKey := "SYSTEM\CurrentControlSet\Services\IBMPMSVC\Parameters\Notification"
+	,oldHKVal := 0
 
-	VarSetCapacity(currentDesktopName, 64)
+	RegRead, oldHKVal, HKEY_LOCAL_MACHINE, %watchKey%
+
 	if ((hDesk := DllCall("GetThreadDesktop", "UInt", DllCall("GetCurrentThreadId", "UInt"), "Ptr"))) 
 		GetUserObjectName(hDesk, scriptDesktopName)
+	VarSetCapacity(currentDesktopName, 64)
 
 	handles := []
 
@@ -106,8 +106,9 @@ StartMonitoring()
 	for i, hEvent in handles
 		NumPut(hEvent, handlesArr, (i - 1) * A_PtrSize, "Ptr")
 
-	handles := [], hEvent := hDesk := ""
+	handles := hEvent := hDesk := ""
 
+	; TODO: determine onScriptDesktop by calling OpenInputDesktop
 	onScriptDesktop := True, watchReg := True, hKey := 0
 
 	while (watchReg) {
@@ -158,7 +159,7 @@ StartMonitoring()
 				continue
 			}
 		}
-		
+
 		DllCall(RegCloseKey, "Ptr", hKey), hKey := 0
 	}
 
@@ -193,7 +194,8 @@ WM_WTSSESSION_CHANGEcb(wParam, lParam)
 	Critical Off
 }
 
-GetUserObjectName(hObj, ByRef out) {
+GetUserObjectName(hObj, ByRef out)
+{
 	static GetUserObjectInformationW := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "user32.dll", "Ptr"), "AStr", "GetUserObjectInformationW", "Ptr")
 	nLengthNeeded := VarSetCapacity(out)
 
