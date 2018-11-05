@@ -72,7 +72,7 @@ main()
 
 StartMonitoring()
 {
-	global watchReg, oldHKVal, scriptSessionID, currentSessionID
+	global watchReg, oldHKVal, scriptSessionID, inScriptSession
 	MsgWaitForMultipleObjectsEx := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "user32.dll", "Ptr"), "AStr", "MsgWaitForMultipleObjectsEx", "Ptr")
 	,RegOpenKeyExW := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "advapi32.dll", "Ptr"), "AStr", "RegOpenKeyExW", "Ptr")
 	,RegNotifyChangeKeyValue := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "advapi32.dll", "Ptr"), "AStr", "RegNotifyChangeKeyValue", "Ptr")
@@ -132,7 +132,7 @@ StartMonitoring()
 				if (HKEvent != oldHKVal) {
 					newHKEvent := HKEvent ^ oldHKVal
 
-					if (scriptSessionID == currentSessionID && onScriptDesktop) {
+					if (inScriptSession && onScriptDesktop) {
 						if (newHKEvent == 536870912) {
 							Send {Media_Prev}
 						} else if (newHKEvent == 1073741824) {
@@ -170,9 +170,9 @@ StartMonitoring()
 
 StartWTSMonitoring()
 {
-	global WM_WTSSESSION_CHANGE := 0x2B1, scriptSessionID, currentSessionID, hModuleWtsapi
+	global WM_WTSSESSION_CHANGE := 0x2B1, scriptSessionID, inScriptSession, hModuleWtsapi
 	DllCall("ProcessIdToSessionId", "UInt", DllCall("GetCurrentProcessId", "UInt"), "UInt*", scriptSessionID)
-	currentSessionID := DllCall("WTSGetActiveConsoleSessionId", "UInt")
+	inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
 
 	if ((hModuleWtsapi := DllCall("LoadLibrary", "Str", "wtsapi32.dll", "Ptr"))) {
 		if (DllCall("wtsapi32.dll\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", NOTIFY_FOR_ALL_SESSIONS := 1))
@@ -185,10 +185,10 @@ StartWTSMonitoring()
 WM_WTSSESSION_CHANGEcb(wParam, lParam)
 {
 	Critical
-	global currentSessionID
+	global scriptSessionID, inScriptSession
 
 	if (wParam == 1) ; WTS_CONSOLE_CONNECT
-		currentSessionID := lParam
+		inScriptSession := scriptSessionID == lParam
 
 	Critical Off
 }
