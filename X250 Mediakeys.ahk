@@ -91,7 +91,6 @@ StartMonitoring()
 
 	if ((hDesk := DllCall("GetThreadDesktop", "UInt", DllCall("GetCurrentThreadId", "UInt"), "Ptr"))) 
 		GetUserObjectName(hDesk, scriptDesktopName)
-	VarSetCapacity(currentDesktopName, 64)
 
 	handles := []
 
@@ -110,8 +109,7 @@ StartMonitoring()
 
 	handles := hEvent := hDesk := ""
 
-	; TODO: determine onScriptDesktop by calling OpenInputDesktop
-	onScriptDesktop := True, watchReg := True, hKey := 0
+	onScriptDesktop := IsDesktopActive(scriptDesktopName), watchReg := True, hKey := 0
 
 	Loop
 	{
@@ -240,7 +238,11 @@ WM_WTSSESSION_CHANGEcb(wParam, lParam)
 
 IsDesktopActive(ByRef scriptDesktopName)
 {
+	static currentDesktopName
+	
 	ret := False
+	if !VarSetCapacity(currentDesktopName)
+		VarSetCapacity(currentDesktopName, 64)
 
 	If hDesk := DllCall("OpenInputDesktop", "UInt", 0, "Int", False, "UInt", 0, "Ptr")
 	{
