@@ -62,6 +62,11 @@ main()
 		SetRegView Default
 	}
 
+	if (!A_IsUnicode) {
+		MsgBox This script must be ran with a Unicode build of AutoHotkey
+		ExitApp 1
+	}
+	
 	OnExit("AtExit")
 	,StartWTSMonitoring()
 	SetTimer, StartMonitoring, -0
@@ -72,10 +77,10 @@ StartMonitoring()
 	global watchReg, inScriptSession
 
 	SYNCHRONIZE := 0x00100000
-	,HKEY_LOCAL_MACHINE_ := 0x80000002
-	,KEY_QUERY_VALUE := 0x0001
-	,KEY_NOTIFY := 0x0010
-	,REG_NOTIFY_CHANGE_LAST_SET := 0x00000004
+	;,HKEY_LOCAL_MACHINE_ := 0x80000002
+	;,KEY_QUERY_VALUE := 0x0001
+	;,KEY_NOTIFY := 0x0010
+	;,REG_NOTIFY_CHANGE_LAST_SET := 0x00000004
 
 	watchKey := "SYSTEM\CurrentControlSet\Services\IBMPMSVC\Parameters\Notification"
 	,oldHKVal := 0
@@ -106,17 +111,17 @@ StartMonitoring()
 	; TODO: determine onScriptDesktop by calling OpenInputDesktop
 	onScriptDesktop := True, watchReg := True, hKey := 0
 
-	While watchReg
+	Loop
 	{
 		If !hKey
 		{
-			if DllCall("advapi32\RegOpenKeyExW", "Ptr", HKEY_LOCAL_MACHINE_, "WStr", watchKey, "UInt", 0, "UInt", KEY_NOTIFY | KEY_QUERY_VALUE, "Ptr*", hKey) != 0
+			if DllCall("advapi32\RegOpenKeyExW", "Ptr", 0x80000002, "Ptr", &watchKey, "UInt", 0, "UInt", 0x0011, "Ptr*", hKey) != 0
 				Break
 			Else
 				r := 0
 		}
 
-		If (r == 0 && DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", False, "Int", REG_NOTIFY_CHANGE_LAST_SET, "Ptr", hRegEvent, "Int", True) != 0)
+		If (r == 0 && DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", 0, "Int", 0x00000004, "Ptr", hRegEvent, "Int", 1) != 0)
 		{
 			DllCall("advapi32\RegCloseKey", "Ptr", hKey)
 			Break
@@ -173,8 +178,10 @@ StartMonitoring()
 				DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
 				Continue
 			}
-		} Else
+		} Else {
 			DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
+			Break
+		}
 	}
 
 	Loop %dwHandleCount%
