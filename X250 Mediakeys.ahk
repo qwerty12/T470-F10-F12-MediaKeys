@@ -66,7 +66,9 @@ main()
 		MsgBox This script must be ran with a Unicode build of AutoHotkey
 		ExitApp 1
 	}
-	
+
+	;DllCall("ChangeWindowMessageFilterEx", "ptr", A_ScriptHwnd, "uint", 0x44 , "uint", 1, "ptr", 0) ; https://autohotkey.com/boards/viewtopic.php?p=159849#p159849
+
 	OnExit("AtExit")
 	,StartWTSMonitoring()
 	SetTimer, StartMonitoring, -0
@@ -146,7 +148,7 @@ StartMonitoring()
 
 				If HKEvent = oldHKVal
 					Continue
-
+again:
 				If (inScriptSession && onScriptDesktop)
 				{
 					newHKEvent := HKEvent ^ oldHKVal
@@ -154,9 +156,27 @@ StartMonitoring()
 					If (newHKEvent == 1073741824) {
 						Send {Media_Play_Pause}
 					} Else If (newHKEvent == 2147483648) {
-						Critical 1000
-						Send {Media_Next}
-						Critical Off
+						Loop
+						{
+							Send {Media_Next}
+
+							If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", 0, "Int", 0x00000004, "Ptr", hRegEvent, "Int", 1) != 0
+								Break
+							If DllCall("WaitForSingleObject", "Ptr", hRegEvent, "UInt", 500) != 0
+								Break
+							If DllCall("advapi32\RegQueryValueExW", "Ptr", hKey, "Ptr", 0, "Ptr", 0, "Ptr", 0, "UInt*", HKEvent2, "UInt*", 4) != 0
+								Break
+
+							If ((HKEvent2 ^ HKEvent) == 2147483648) {
+								HKEvent := HKEvent2
+								Continue
+							}
+							Else {
+								oldHKVal := HKEvent
+								HKEvent := HKEvent2
+								goto again
+							}
+						}
 					} Else If (newHKEvent == 536870912) {
 						Critical 1000
 						Send {Media_Prev}
