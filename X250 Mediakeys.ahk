@@ -20,13 +20,13 @@ main()
 {
 	if (!A_IsAdmin) {
 		isUiAccess := True
-		if (DllCall("Advapi32\OpenProcessToken", "Ptr", DllCall("GetCurrentProcess", "Ptr"), "UInt", TOKEN_QUERY := 0x0008, "Ptr*", hToken)) {
-			DllCall("Advapi32\GetTokenInformation", "Ptr", hToken, "UInt", TokenUIAccess := 26, "UInt*", isUiAccess, "UInt", 4, "UInt*", dwLengthNeeded)
+		if (DllCall("advapi32\OpenProcessToken", "Ptr", DllCall("GetCurrentProcess", "Ptr"), "UInt", TOKEN_QUERY := 0x0008, "Ptr*", hToken)) {
+			DllCall("advapi32\GetTokenInformation", "Ptr", hToken, "UInt", TokenUIAccess := 26, "UInt*", isUiAccess, "UInt", 4, "UInt*", dwLengthNeeded)
 			DllCall("CloseHandle", "Ptr", hToken)
 		}
 
 		if (!isUiAccess) {
-			if (DllCall("Shlwapi\AssocQueryString", "UInt", ASSOCF_INIT_IGNOREUNKNOWN := 0x00000400, "UInt", ASSOCSTR_COMMAND := 1, "Str", ".ahk", "Str", "uiAccess", "Ptr", 0, "UInt*", 0) == 1) {
+			if (DllCall("shlwapi\AssocQueryString", "UInt", ASSOCF_INIT_IGNOREUNKNOWN := 0x00000400, "UInt", ASSOCSTR_COMMAND := 1, "Str", ".ahk", "Str", "uiAccess", "Ptr", 0, "UInt*", 0) == 1) {
 				if not (RegExMatch(DllCall("GetCommandLine", "str"), " /restart(?!\S)")) {
 					try if not A_IsCompiled
 						Run *uiAccess "%A_ScriptFullPath%" /restart
@@ -70,15 +70,10 @@ main()
 StartMonitoring()
 {
 	global watchReg, inScriptSession
-	MsgWaitForMultipleObjectsEx := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "user32.dll", "Ptr"), "AStr", "MsgWaitForMultipleObjectsEx", "Ptr")
-	,RegOpenKeyExW := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "advapi32.dll", "Ptr"), "AStr", "RegOpenKeyExW", "Ptr")
-	,RegNotifyChangeKeyValue := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "advapi32.dll", "Ptr"), "AStr", "RegNotifyChangeKeyValue", "Ptr")
-	,RegCloseKey := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "advapi32.dll", "Ptr"), "AStr", "RegCloseKey", "Ptr")
-	,OpenInputDesktop := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "user32.dll", "Ptr"), "AStr", "OpenInputDesktop", "Ptr")
-	,CloseDesktop := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "user32.dll", "Ptr"), "AStr", "CloseDesktop", "Ptr")
 
 	SYNCHRONIZE := 0x00100000
 	,HKEY_LOCAL_MACHINE_ := 0x80000002
+	,KEY_QUERY_VALUE := 0x0001
 	,KEY_NOTIFY := 0x0010
 	,REG_NOTIFY_CHANGE_LAST_SET := 0x00000004
 
@@ -111,56 +106,75 @@ StartMonitoring()
 	; TODO: determine onScriptDesktop by calling OpenInputDesktop
 	onScriptDesktop := True, watchReg := True, hKey := 0
 
-	while (watchReg) {
-		if (!hKey) {
-			if (DllCall(RegOpenKeyExW, "Ptr", HKEY_LOCAL_MACHINE_, "WStr", watchKey, "UInt", 0, "UInt", KEY_NOTIFY, "Ptr*", hKey) != 0)
-				break
+	While watchReg
+	{
+		If !hKey
+		{
+			if DllCall("advapi32\RegOpenKeyExW", "Ptr", HKEY_LOCAL_MACHINE_, "WStr", watchKey, "UInt", 0, "UInt", KEY_NOTIFY | KEY_QUERY_VALUE, "Ptr*", hKey) != 0
+				Break
+			Else
+				r := 0
+		}
 
-			if (DllCall(RegNotifyChangeKeyValue, "Ptr", hKey, "Int", False, "Int", REG_NOTIFY_CHANGE_LAST_SET, "Ptr", hRegEvent, "Int", True) != 0) {
-				DllCall(RegCloseKey, "Ptr", hKey)
-				break
-			}
+		If (r == 0 && DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", False, "Int", REG_NOTIFY_CHANGE_LAST_SET, "Ptr", hRegEvent, "Int", True) != 0)
+		{
+			DllCall("advapi32\RegCloseKey", "Ptr", hKey)
+			Break
 		}
 
 		Loop {
-			r := DllCall(MsgWaitForMultipleObjectsEx, "UInt", dwHandleCount, "Ptr", &handlesArr, "UInt", -1, "UInt", 0x4FF, "UInt", 0x6, "UInt")
+			r := DllCall("MsgWaitForMultipleObjectsEx", "UInt", dwHandleCount, "Ptr", &handlesArr, "UInt", -1, "UInt", 0x4FF, "UInt", 0x6)
+			If r < dwHandleCount || r = -1 || !watchReg
+				Break
 			Sleep -1
-		} until (!watchReg || r < dwHandleCount || r == 0xFFFFFFFF)
-
-		if (watchReg) {
-			if (r == 0) {
-				RegRead, HKEvent, HKEY_LOCAL_MACHINE, %watchKey%
-				if (HKEvent != oldHKVal) {
-					newHKEvent := HKEvent ^ oldHKVal
-
-					if (inScriptSession && onScriptDesktop) {
-						if (newHKEvent == 536870912) {
-							Send {Media_Prev}
-						} else if (newHKEvent == 1073741824) {
-							Send {Media_Play_Pause}
-						} else if (newHKEvent == 2147483648) {
-							Send {Media_Next}
-						}
-					}
-
-					oldHKVal := HKEvent
-				}
-				
-				DllCall(RegCloseKey, "Ptr", hKey), hKey := 0
-				continue
-			}
-			
-			if (r == 1) {
-				if (hDesk := DllCall(OpenInputDesktop, "UInt", 0, "Int", False, "UInt", 0, "Ptr")) {
-					onScriptDesktop := GetUserObjectName(hDesk, currentDesktopName) && currentDesktopName == scriptDesktopName
-					DllCall(CloseDesktop, "Ptr", hDesk)
-				} else onScriptDesktop := False
-				
-				continue
-			}
 		}
 
-		DllCall(RegCloseKey, "Ptr", hKey), hKey := 0
+		If watchReg
+		{
+			If r = 0
+			{
+				If DllCall("advapi32\RegQueryValueExW", "Ptr", hKey, "Ptr", 0, "Ptr", 0, "Ptr", 0, "UInt*", HKEvent, "UInt*", 4) != 0
+				{
+					DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
+					RegRead, HKEvent, HKEY_LOCAL_MACHINE, %watchKey%
+				}
+
+				If HKEvent = oldHKVal
+					Continue
+
+				If (inScriptSession && onScriptDesktop)
+				{
+					newHKEvent := HKEvent ^ oldHKVal
+
+					If (newHKEvent == 1073741824) {
+						Send {Media_Play_Pause}
+					} Else If (newHKEvent == 2147483648) {
+						Critical 1000
+						Send {Media_Next}
+						Critical Off
+					} Else If (newHKEvent == 536870912) {
+						Critical 1000
+						Send {Media_Prev}
+						Critical Off
+					}
+				}
+
+				oldHKVal := HKEvent
+				Continue
+			}
+			
+			If r = 1
+			{
+				If (hDesk := DllCall("OpenInputDesktop", "UInt", 0, "Int", False, "UInt", 0, "Ptr")) {
+					onScriptDesktop := GetUserObjectName(hDesk, currentDesktopName) && currentDesktopName == scriptDesktopName
+					DllCall("CloseDesktop", "Ptr", hDesk)
+				} Else onScriptDesktop := False
+				
+				DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
+				Continue
+			}
+		} Else
+			DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
 	}
 
 	Loop %dwHandleCount%
@@ -176,7 +190,7 @@ StartWTSMonitoring()
 	inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
 
 	if ((hModuleWtsapi := DllCall("LoadLibrary", "Str", "wtsapi32.dll", "Ptr"))) {
-		if (DllCall("wtsapi32.dll\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", NOTIFY_FOR_ALL_SESSIONS := 1))
+		if (DllCall("wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", NOTIFY_FOR_ALL_SESSIONS := 1))
 			OnMessage(WM_WTSSESSION_CHANGE, "WM_WTSSESSION_CHANGEcb")
 		else
 			DllCall("FreeLibrary", "Ptr", hModuleWtsapi), hModuleWtsapi := 0
@@ -196,12 +210,11 @@ WM_WTSSESSION_CHANGEcb(wParam, lParam)
 
 GetUserObjectName(hObj, ByRef out)
 {
-	static GetUserObjectInformationW := DllCall("GetProcAddress", "Ptr", DllCall("GetModuleHandleW", "WStr", "user32.dll", "Ptr"), "AStr", "GetUserObjectInformationW", "Ptr")
 	nLengthNeeded := VarSetCapacity(out)
 
-	if (!(ret := DllCall(GetUserObjectInformationW, "Ptr", hObj, "Int", 2, "WStr", out, "UInt", nLengthNeeded, "UInt*", nLengthNeeded))) ; UOI_NAME
+	if (!(ret := DllCall("GetUserObjectInformationW", "Ptr", hObj, "Int", 2, "WStr", out, "UInt", nLengthNeeded, "UInt*", nLengthNeeded))) ; UOI_NAME
 		if (A_LastError == 122 && VarSetCapacity(out, nLengthNeeded)) ; ERROR_INSUFFICIENT_BUFFER
-			ret := DllCall(GetUserObjectInformationW, "Ptr", hObj, "Int", 2, "WStr", out, "UInt", nLengthNeeded, "Ptr", 0)
+			ret := DllCall("GetUserObjectInformationW", "Ptr", hObj, "Int", 2, "WStr", out, "UInt", nLengthNeeded, "Ptr", 0)
 
 	return ret
 }
@@ -219,7 +232,7 @@ AtExit()
 	}
 
 	if (hModuleWtsapi) {
-		DllCall("wtsapi32.dll\WTSUnRegisterSessionNotification", "Ptr", A_ScriptHwnd)
+		DllCall("wtsapi32\WTSUnRegisterSessionNotification", "Ptr", A_ScriptHwnd)
 		OnMessage(WM_WTSSESSION_CHANGE, "")
 		DllCall("FreeLibrary", "Ptr", hModuleWtsapi), hModuleWtsapi := 0
 	}
