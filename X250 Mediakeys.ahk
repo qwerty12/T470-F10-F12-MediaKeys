@@ -59,12 +59,6 @@ main()
 			RegWrite, REG_SZ, %desktop%, Parameters
 		}
 
-		baseName := baseKey . "5"
-		,desktop := baseName . "\Desktop"
-		RegWrite, REG_DWORD, %baseName%, AppType, 1
-		RegWrite, REG_SZ, %desktop%, File, %A_ProgramFiles%\AutoHotkey\AutoHotkey.exe
-		RegWrite, REG_SZ, %desktop%, Parameters, %A_ScriptDir%\ToggleWifi.ahk
-
 		SetRegView Default
 	}
 
