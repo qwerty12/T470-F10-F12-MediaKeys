@@ -22,7 +22,7 @@ main()
 		isUiAccess := True
 		if (DllCall("advapi32\OpenProcessToken", "Ptr", DllCall("GetCurrentProcess", "Ptr"), "UInt", TOKEN_QUERY := 0x0008, "Ptr*", hToken)) {
 			DllCall("advapi32\GetTokenInformation", "Ptr", hToken, "UInt", TokenUIAccess := 26, "UInt*", isUiAccess, "UInt", 4, "UInt*", dwLengthNeeded)
-			DllCall("CloseHandle", "Ptr", hToken)
+			,DllCall("CloseHandle", "Ptr", hToken)
 		}
 
 		if (!isUiAccess) {
@@ -51,13 +51,19 @@ main()
 		baseKey := "HKEY_LOCAL_MACHINE\SOFTWARE\Lenovo\ShortcutKey\AppLaunch\"
 		for _, key in ["Ex_1D", "Ex_1E", "Ex_1F"] {
 			keyKey := baseKey . key
-			desktop := keyKey . "\Desktop"
+			,desktop := keyKey . "\Desktop"
 
 			RegDelete %keyKey%
 			RegWrite, REG_DWORD, %keyKey%, AppType, 1
 			RegWrite, REG_SZ, %desktop%, File, NUL
 			RegWrite, REG_SZ, %desktop%, Parameters
 		}
+
+		baseName := baseKey . "5"
+		,desktop := baseName . "\Desktop"
+		RegWrite, REG_DWORD, %baseName%, AppType, 1
+		RegWrite, REG_SZ, %desktop%, File, %A_ProgramFiles%\AutoHotkey\AutoHotkey.exe
+		RegWrite, REG_SZ, %desktop%, Parameters, %A_ScriptDir%\ToggleWifi.ahk
 
 		SetRegView Default
 	}
@@ -103,7 +109,7 @@ StartMonitoring()
 		handles.Push(hEvent)
 
 	dwHandleCount := handles.MaxIndex()
-	VarSetCapacity(handlesArr, dwHandleCount * A_PtrSize)
+	,VarSetCapacity(handlesArr, dwHandleCount * A_PtrSize)
 	for i, hEvent in handles
 		NumPut(hEvent, handlesArr, (i - 1) * A_PtrSize, "Ptr")
 
@@ -114,12 +120,8 @@ StartMonitoring()
 	Loop
 	{
 		If !hKey
-		{
-			if DllCall("advapi32\RegOpenKeyExW", "Ptr", 0x80000002, "Ptr", &watchKey, "UInt", 0, "UInt", 0x0011, "Ptr*", hKey) != 0
+			If (r := DllCall("advapi32\RegOpenKeyExW", "Ptr", 0x80000002, "Ptr", &watchKey, "UInt", 0, "UInt", 0x0011, "Ptr*", hKey)) != 0
 				Break
-			Else
-				r := 0
-		}
 
 		If (r == 0 && DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", 0, "Int", 0x00000004, "Ptr", hRegEvent, "Int", 1) != 0)
 		{
@@ -160,11 +162,11 @@ again:
 
 							If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", 0, "Int", 0x00000004, "Ptr", hRegEvent, "Int", 1) != 0
 								Break
-							s := DllCall("WaitForSingleObject", "Ptr", hRegEvent, "UInt", 500)
+							s := DllCall("WaitForSingleObject", "Ptr", hRegEvent, "UInt", 800)
 							If s = 258
 							{
-								onScriptDesktop := IsDesktopActive(scriptDesktopName)
 								inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
+								,onScriptDesktop := IsDesktopActive(scriptDesktopName)
 								Break
 							}
 							if s != 0
@@ -178,8 +180,8 @@ again:
 							}
 							Else {
 								oldHKVal := HKEvent
-								HKEvent := HKEvent2
-								goto again
+								,HKEvent := HKEvent2
+								Goto again
 							}
 						}
 					} Else If (newHKEvent == 536870912) {
@@ -196,7 +198,7 @@ again:
 			If r = 1
 			{
 				onScriptDesktop := IsDesktopActive(scriptDesktopName)
-				DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
+				,DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
 				Continue
 			}
 		} Else {
@@ -215,7 +217,7 @@ StartWTSMonitoring()
 {
 	global WM_WTSSESSION_CHANGE := 0x2B1, scriptSessionID, inScriptSession, hModuleWtsapi
 	DllCall("ProcessIdToSessionId", "UInt", DllCall("GetCurrentProcessId", "UInt"), "UInt*", scriptSessionID)
-	inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
+	,inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
 
 	if ((hModuleWtsapi := DllCall("LoadLibrary", "Str", "wtsapi32.dll", "Ptr"))) {
 		if (DllCall("wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", NOTIFY_FOR_ALL_SESSIONS := 1))
@@ -247,7 +249,7 @@ IsDesktopActive(ByRef scriptDesktopName)
 	If hDesk := DllCall("OpenInputDesktop", "UInt", 0, "Int", False, "UInt", 0, "Ptr")
 	{
 		ret := GetUserObjectName(hDesk, currentDesktopName) && currentDesktopName == scriptDesktopName
-		DllCall("CloseDesktop", "Ptr", hDesk)
+		,DllCall("CloseDesktop", "Ptr", hDesk)
 	}
 	
 	return ret
@@ -278,8 +280,8 @@ AtExit()
 
 	if (hModuleWtsapi) {
 		DllCall("wtsapi32\WTSUnRegisterSessionNotification", "Ptr", A_ScriptHwnd)
-		OnMessage(WM_WTSSESSION_CHANGE, "")
-		DllCall("FreeLibrary", "Ptr", hModuleWtsapi), hModuleWtsapi := 0
+		,OnMessage(WM_WTSSESSION_CHANGE, "")
+		,DllCall("FreeLibrary", "Ptr", hModuleWtsapi), hModuleWtsapi := 0
 	}
 
 	Critical Off
