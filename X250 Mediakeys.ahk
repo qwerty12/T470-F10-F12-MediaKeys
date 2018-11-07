@@ -76,7 +76,7 @@ main()
 
 StartMonitoring()
 {
-	global watchReg, inScriptSession
+	global watchReg, inScriptSession, scriptSessionID
 
 	SYNCHRONIZE := 0x00100000
 	;,HKEY_LOCAL_MACHINE_ := 0x80000002
@@ -162,7 +162,14 @@ again:
 
 							If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", 0, "Int", 0x00000004, "Ptr", hRegEvent, "Int", 1) != 0
 								Break
-							If DllCall("WaitForSingleObject", "Ptr", hRegEvent, "UInt", 500) != 0
+							s := DllCall("WaitForSingleObject", "Ptr", hRegEvent, "UInt", 500)
+							If s = 258
+							{
+								onScriptDesktop := IsDesktopActive(scriptDesktopName)
+								inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
+								Break
+							}
+							if s != 0
 								Break
 							If DllCall("advapi32\RegQueryValueExW", "Ptr", hKey, "Ptr", 0, "Ptr", 0, "Ptr", 0, "UInt*", HKEvent2, "UInt*", 4) != 0
 								Break
@@ -190,11 +197,7 @@ again:
 			
 			If r = 1
 			{
-				If (hDesk := DllCall("OpenInputDesktop", "UInt", 0, "Int", False, "UInt", 0, "Ptr")) {
-					onScriptDesktop := GetUserObjectName(hDesk, currentDesktopName) && currentDesktopName == scriptDesktopName
-					DllCall("CloseDesktop", "Ptr", hDesk)
-				} Else onScriptDesktop := False
-				
+				onScriptDesktop := IsDesktopActive(scriptDesktopName)
 				DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
 				Continue
 			}
@@ -233,6 +236,19 @@ WM_WTSSESSION_CHANGEcb(wParam, lParam)
 		inScriptSession := scriptSessionID == lParam
 
 	Critical Off
+}
+
+IsDesktopActive(ByRef scriptDesktopName)
+{
+	ret := False
+
+	If hDesk := DllCall("OpenInputDesktop", "UInt", 0, "Int", False, "UInt", 0, "Ptr")
+	{
+		ret := GetUserObjectName(hDesk, currentDesktopName) && currentDesktopName == scriptDesktopName
+		DllCall("CloseDesktop", "Ptr", hDesk)
+	}
+	
+	return ret
 }
 
 GetUserObjectName(hObj, ByRef out)
