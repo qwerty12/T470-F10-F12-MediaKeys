@@ -76,7 +76,7 @@ main()
 
 StartMonitoring()
 {
-	global watchReg, inScriptSession, scriptSessionID
+	global watchReg := True, inScriptSession, onScriptDesktop
 
 	SYNCHRONIZE := 0x00100000
 	;,HKEY_LOCAL_MACHINE_ := 0x80000002
@@ -88,9 +88,6 @@ StartMonitoring()
 	,oldHKVal := 0
 
 	RegRead, oldHKVal, HKEY_LOCAL_MACHINE, %watchKey%
-
-	if ((hDesk := DllCall("GetThreadDesktop", "UInt", DllCall("GetCurrentThreadId", "UInt"), "Ptr"))) 
-		GetUserObjectName(hDesk, scriptDesktopName)
 
 	handles := []
 
@@ -108,8 +105,7 @@ StartMonitoring()
 		NumPut(hEvent, handlesArr, (i - 1) * A_PtrSize, "Ptr")
 
 	handles := hEvent := hDesk := ""
-
-	onScriptDesktop := IsDesktopActive(scriptDesktopName), watchReg := True, hKey := 0
+	,hKey := 0
 
 	Loop
 	{
@@ -156,11 +152,10 @@ again:
 
 							If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", 0, "Int", 0x00000004, "Ptr", hRegEvent, "Int", 1) != 0
 								Break
-							s := DllCall("WaitForSingleObject", "Ptr", hRegEvent, "UInt", 800)
+							s := DllCall("WaitForSingleObject", "Ptr", hRegEvent, "UInt", 1000)
 							If s = 258
 							{
-								inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
-								,onScriptDesktop := IsDesktopActive(scriptDesktopName)
+								SetTimer, ManualDesktopSessionCheck, -100
 								Break
 							}
 							if s != 0
@@ -191,7 +186,7 @@ again:
 			
 			If r = 1
 			{
-				onScriptDesktop := IsDesktopActive(scriptDesktopName)
+				onScriptDesktop := IsDesktopActive()
 				,DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
 				Continue
 			}
@@ -207,33 +202,9 @@ again:
 	ExitApp 1
 }
 
-StartWTSMonitoring()
+IsDesktopActive()
 {
-	global WM_WTSSESSION_CHANGE := 0x2B1, scriptSessionID, inScriptSession, hModuleWtsapi
-	DllCall("ProcessIdToSessionId", "UInt", DllCall("GetCurrentProcessId", "UInt"), "UInt*", scriptSessionID)
-	,inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
-
-	if ((hModuleWtsapi := DllCall("LoadLibrary", "Str", "wtsapi32.dll", "Ptr"))) {
-		if (DllCall("wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", NOTIFY_FOR_ALL_SESSIONS := 1))
-			OnMessage(WM_WTSSESSION_CHANGE, "WM_WTSSESSION_CHANGEcb")
-		else
-			DllCall("FreeLibrary", "Ptr", hModuleWtsapi), hModuleWtsapi := 0
-	}
-}
-
-WM_WTSSESSION_CHANGEcb(wParam, lParam)
-{
-	Critical
-	global scriptSessionID, inScriptSession
-
-	if (wParam == 1) ; WTS_CONSOLE_CONNECT
-		inScriptSession := scriptSessionID == lParam
-
-	Critical Off
-}
-
-IsDesktopActive(ByRef scriptDesktopName)
-{
+	global scriptDesktopName
 	static currentDesktopName
 	
 	ret := False
@@ -247,6 +218,41 @@ IsDesktopActive(ByRef scriptDesktopName)
 	}
 	
 	return ret
+}
+
+ManualDesktopSessionCheck()
+{
+	global inScriptSession, scriptSessionID, onScriptDesktop
+
+	inScriptSession := scriptSessionID == DllCall("WTSGetActiveConsoleSessionId", "UInt")
+	,onScriptDesktop := IsDesktopActive()
+}
+
+WM_WTSSESSION_CHANGEcb(wParam, lParam)
+{
+	Critical
+	global scriptSessionID, inScriptSession
+
+	if (wParam == 1) ; WTS_CONSOLE_CONNECT
+		inScriptSession := scriptSessionID == lParam
+
+	Critical Off
+}
+
+StartWTSMonitoring()
+{
+	global WM_WTSSESSION_CHANGE := 0x2B1, scriptSessionID, hModuleWtsapi, scriptDesktopName
+	DllCall("ProcessIdToSessionId", "UInt", DllCall("GetCurrentProcessId", "UInt"), "UInt*", scriptSessionID)
+	if ((hDesk := DllCall("GetThreadDesktop", "UInt", DllCall("GetCurrentThreadId", "UInt"), "Ptr"))) 
+		GetUserObjectName(hDesk, scriptDesktopName)
+	ManualDesktopSessionCheck()
+
+	if ((hModuleWtsapi := DllCall("LoadLibrary", "Str", "wtsapi32.dll", "Ptr"))) {
+		if (DllCall("wtsapi32\WTSRegisterSessionNotification", "Ptr", A_ScriptHwnd, "UInt", NOTIFY_FOR_ALL_SESSIONS := 1))
+			OnMessage(WM_WTSSESSION_CHANGE, "WM_WTSSESSION_CHANGEcb")
+		else
+			DllCall("FreeLibrary", "Ptr", hModuleWtsapi), hModuleWtsapi := 0
+	}
 }
 
 GetUserObjectName(hObj, ByRef out)
