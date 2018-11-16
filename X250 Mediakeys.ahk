@@ -28,9 +28,10 @@ main()
 		if (!isUiAccess) {
 			if (DllCall("shlwapi\AssocQueryString", "UInt", ASSOCF_INIT_IGNOREUNKNOWN := 0x00000400, "UInt", ASSOCSTR_COMMAND := 1, "Str", ".ahk", "Str", "uiAccess", "Ptr", 0, "UInt*", 0) == 1) {
 				if not (RegExMatch(DllCall("GetCommandLine", "str"), " /restart(?!\S)")) {
-					try if not A_IsCompiled
-						Run *uiAccess "%A_ScriptFullPath%" /restart
-					ExitApp
+					if not A_IsCompiled {
+						try Run *uiAccess "%A_ScriptFullPath%" /restart
+						ExitApp
+					}
 				}
 			}
 		}
