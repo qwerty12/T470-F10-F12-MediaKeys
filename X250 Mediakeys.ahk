@@ -29,8 +29,10 @@ main()
 			if (DllCall("shlwapi\AssocQueryString", "UInt", ASSOCF_INIT_IGNOREUNKNOWN := 0x00000400, "UInt", ASSOCSTR_COMMAND := 1, "Str", ".ahk", "Str", "uiAccess", "Ptr", 0, "UInt*", 0) == 1) {
 				if not (RegExMatch(DllCall("GetCommandLine", "str"), " /restart(?!\S)")) {
 					if not A_IsCompiled {
-						try Run *uiAccess "%A_ScriptFullPath%" /restart
-						ExitApp
+						try {
+							Run *uiAccess "%A_ScriptFullPath%" /restart
+							ExitApp
+						}
 					}
 				}
 			}
@@ -110,7 +112,7 @@ StartMonitoring()
 
 	Loop
 	{
-		If !hKey
+		If (!hKey)
 			If (r := DllCall("advapi32\RegOpenKeyExW", "Ptr", 0x80000002, "Ptr", &watchKey, "UInt", 0, "UInt", 0x0011, "Ptr*", hKey)) != 0
 				Break
 
@@ -122,7 +124,7 @@ StartMonitoring()
 
 		Loop {
 			r := DllCall("MsgWaitForMultipleObjectsEx", "UInt", dwHandleCount, "Ptr", &handlesArr, "UInt", -1, "UInt", 0x4FF, "UInt", 0x6)
-			If r < dwHandleCount || r = -1 || !watchReg
+			If (r < dwHandleCount || r = -1 || !watchReg)
 				Break
 			Sleep -1
 		}
@@ -139,7 +141,7 @@ StartMonitoring()
 
 				If HKEvent = oldHKVal
 					Continue
-again:
+
 				If (inScriptSession && onScriptDesktop)
 				{
 					newHKEvent := HKEvent ^ oldHKVal
@@ -147,37 +149,9 @@ again:
 					If (newHKEvent == 1073741824) {
 						Send {Media_Play_Pause}
 					} Else If (newHKEvent == 2147483648) {
-						Loop
-						{
-							Send {Media_Next}
-
-							If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", 0, "Int", 0x00000004, "Ptr", hRegEvent, "Int", 1) != 0
-								Break
-							s := DllCall("WaitForSingleObject", "Ptr", hRegEvent, "UInt", 1000)
-							If s = 258
-							{
-								SetTimer, ManualDesktopSessionCheck, -100
-								Break
-							}
-							if s != 0
-								Break
-							If DllCall("advapi32\RegQueryValueExW", "Ptr", hKey, "Ptr", 0, "Ptr", 0, "Ptr", 0, "UInt*", HKEvent2, "UInt*", 4) != 0
-								Break
-
-							If ((HKEvent2 ^ HKEvent) == 2147483648) {
-								HKEvent := HKEvent2
-								Continue
-							}
-							Else {
-								oldHKVal := HKEvent
-								,HKEvent := HKEvent2
-								Goto again
-							}
-						}
+						Send {Media_Next}
 					} Else If (newHKEvent == 536870912) {
-						Critical 1000
 						Send {Media_Prev}
-						Critical Off
 					}
 				}
 
@@ -231,13 +205,11 @@ ManualDesktopSessionCheck()
 
 WM_WTSSESSION_CHANGEcb(wParam, lParam)
 {
-	Critical
 	global scriptSessionID, inScriptSession
 
 	if (wParam == 1) ; WTS_CONSOLE_CONNECT
 		inScriptSession := scriptSessionID == lParam
 
-	Critical Off
 }
 
 StartWTSMonitoring()
