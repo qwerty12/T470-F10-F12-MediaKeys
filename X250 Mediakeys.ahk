@@ -157,7 +157,7 @@ StartMonitoring()
 							} Else {
 								/*
 								If (A_IsAdmin) {
-									If (DllCall("FindWindowW", "WStr", "Shell_TrayWnd", "Ptr", 0))
+									If (DllCall("FindWindowW", "WStr", "Shell_TrayWnd", "Ptr", 0))Con
 										ShellRun(ConEmuExe,, ConEmuDir)
 									Else
 										WdcRunTaskAsInteractiveUser(ConEmuExe, ConEmuDir)
@@ -169,11 +169,11 @@ StartMonitoring()
 						}
 					} Else {
 						If (newHKEvent == 1048576) {
-							MusicControl("Media_Play_Pause", !onScriptDesktop)
+							Send {Media_Play_Pause}
 						} Else If (newHKEvent == 65536) {
-							MusicControl("Media_Next", !onScriptDesktop)
+							Send {Media_Next}
 						} Else If (newHKEvent == 524288) {
-							MusicControl("Media_Prev", !onScriptDesktop)
+							Send {Media_Prev}
 						}
 					}
 
