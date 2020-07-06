@@ -1,6 +1,12 @@
 ; Thanks to https://github.com/ithinkso117/X330Backlight/blob/master/X330Backlight/Services/HotkeyService.cs#L73 for HKEvent ^ oldHKVal
 ; Add OutputDebug %newHKEvent% after it if you want to find out the value corresponding to one of your ThinkPad's hotkeys
 
+; Some DllCall constants:
+	;SYNCHRONIZE := 0x00100000
+	;,HKEY_LOCAL_MACHINE_ := 0x80000002
+	;,KEY_QUERY_VALUE := 0x0001
+	;,KEY_NOTIFY := 0x0010
+	;,REG_NOTIFY_CHANGE_LAST_SET := 0x00000004
 ;#NoTrayIcon
 #NoEnv  ; Recommended for performance and compatibility with future AutoHotkey releases.
 #KeyHistory 0
@@ -12,23 +18,28 @@ Process, Priority, , A
 SetKeyDelay, -1, -1
 SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
 #Persistent
-#SingleInstance Force
+#SingleInstance Off
 
 main(), return
 
 main()
 {
-	if (!A_IsAdmin) {
-		isUiAccess := True
-		if (DllCall("advapi32\OpenProcessToken", "Ptr", DllCall("GetCurrentProcess", "Ptr"), "UInt", TOKEN_QUERY := 0x0008, "Ptr*", hToken)) {
-			DllCall("advapi32\GetTokenInformation", "Ptr", hToken, "UInt", TokenUIAccess := 26, "UInt*", isUiAccess, "UInt", 4, "UInt*", dwLengthNeeded)
-			,DllCall("CloseHandle", "Ptr", hToken)
-		}
+	if (!A_IsUnicode) {
+		MsgBox This script must be ran with a Unicode build of AutoHotkey
+		ExitApp 1
+	}
 
-		if (!isUiAccess) {
-			if (DllCall("shlwapi\AssocQueryString", "UInt", ASSOCF_INIT_IGNOREUNKNOWN := 0x00000400, "UInt", ASSOCSTR_COMMAND := 1, "Str", ".ahk", "Str", "uiAccess", "Ptr", 0, "UInt*", 0) == 1) {
-				if not (RegExMatch(DllCall("GetCommandLine", "str"), " /restart(?!\S)")) {
-					if not A_IsCompiled {
+	if (!A_IsAdmin) {
+		if not A_IsCompiled {
+			isUiAccess := True
+			if (DllCall("advapi32\OpenProcessToken", "Ptr", DllCall("GetCurrentProcess", "Ptr"), "UInt", TOKEN_QUERY := 0x0008, "Ptr*", hToken)) {
+				DllCall("advapi32\GetTokenInformation", "Ptr", hToken, "UInt", TokenUIAccess := 26, "UInt*", isUiAccess, "UInt", 4, "UInt*", dwLengthNeeded)
+				,DllCall("CloseHandle", "Ptr", hToken)
+			}
+
+			if (!isUiAccess) {
+				if (DllCall("shlwapi\AssocQueryString", "UInt", ASSOCF_INIT_IGNOREUNKNOWN := 0x00000400, "UInt", ASSOCSTR_COMMAND := 1, "Str", ".ahk", "Str", "uiAccess", "Ptr", 0, "UInt*", 0) == 1) {
+					if not (RegExMatch(DllCall("GetCommandLine", "str"), " /restart(?!\S)")) {
 						try {
 							Run *uiAccess "%A_ScriptFullPath%" /restart
 							ExitApp
@@ -52,7 +63,7 @@ main()
 			SetRegView 64
 
 		baseKey := "HKEY_LOCAL_MACHINE\SOFTWARE\Lenovo\ShortcutKey\AppLaunch\"
-		for _, key in ["Ex_1D", "Ex_1E", "Ex_1F"] {
+		for _, key in ["Ex_1C", "Ex_93", "Ex_94", "Ex_90"] {
 			keyKey := baseKey . key
 			,desktop := keyKey . "\Desktop"
 
@@ -65,11 +76,6 @@ main()
 		SetRegView Default
 	}
 
-	if (!A_IsUnicode) {
-		MsgBox This script must be ran with a Unicode build of AutoHotkey
-		ExitApp 1
-	}
-
 	;DllCall("ChangeWindowMessageFilterEx", "ptr", A_ScriptHwnd, "uint", 0x44 , "uint", 1, "ptr", 0) ; https://autohotkey.com/boards/viewtopic.php?p=159849#p159849
 
 	OnExit("AtExit")
@@ -80,99 +86,124 @@ main()
 StartMonitoring()
 {
 	global watchReg := True, inScriptSession, onScriptDesktop
+	ConEmuDir := A_ProgramFiles . "\ConEmu"
+	,ConEmuExe := ConEmuDir . "\ConEmu64.exe"
 
-	SYNCHRONIZE := 0x00100000
-	;,HKEY_LOCAL_MACHINE_ := 0x80000002
-	;,KEY_QUERY_VALUE := 0x0001
-	;,KEY_NOTIFY := 0x0010
-	;,REG_NOTIFY_CHANGE_LAST_SET := 0x00000004
+	Type13 := "Type13"
+	,PARAMETERS := 1
+	,PARAMETERS2 := 2
 
-	watchKey := "SYSTEM\CurrentControlSet\Services\IBMPMSVC\Parameters\Notification"
-	,oldHKVal := 0
+	szKeys := []
+	,handles := []
+	,oldVals := []
+	,hKeys := []
 
-	RegRead, oldHKVal, HKEY_LOCAL_MACHINE, %watchKey%
+	szKeys[PARAMETERS] := "SYSTEM\CurrentControlSet\Services\IBMPMSVC\Parameters\Notification"
+	szKeys[PARAMETERS2] := "SYSTEM\CurrentControlSet\Services\IBMPMSVC\Parameters2\Type10\Notification"
+	Loop % szKeys.MaxIndex() {
+		if (!(handles[A_Index] := DllCall("CreateEvent", "Ptr", 0, "Int", False, "Int", False, "Ptr", 0, "Ptr")))
+			ExitApp 1
+		RegRead, _, HKEY_LOCAL_MACHINE, % szKeys[A_Index], % A_Index == PARAMETERS2 ? "Type13" : ""
+		oldVals[A_Index] := _
+		hKeys[A_Index] := 0
+	}
 
-	handles := []
-
-	if (!(hRegEvent := DllCall("CreateEvent", "Ptr", 0, "Int", False, "Int", False, "Ptr", 0, "Ptr")))
-		ExitApp 1
-
-	handles.Push(hRegEvent)
-		
-	if ((hEvent := DllCall("OpenEvent", "UInt", SYNCHRONIZE, "Int", False, "Str", "WinSta0_DesktopSwitch", "Ptr")))
-		handles.Push(hEvent)
+	if ((_ := DllCall("OpenEvent", "UInt", 0x00100000, "Int", False, "Str", "WinSta0_DesktopSwitch", "Ptr")))
+		handles.Push(_)
 
 	dwHandleCount := handles.MaxIndex()
 	,VarSetCapacity(handlesArr, dwHandleCount * A_PtrSize)
 	for i, hEvent in handles
 		NumPut(hEvent, handlesArr, (i - 1) * A_PtrSize, "Ptr")
 
-	handles := hEvent := hDesk := ""
-	,hKey := 0
-
 	Loop
 	{
-		If (!hKey)
-			If (r := DllCall("advapi32\RegOpenKeyExW", "Ptr", 0x80000002, "Ptr", &watchKey, "UInt", 0, "UInt", 0x0011, "Ptr*", hKey)) != 0
-				Break
-
-		If (r == 0 && DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", 0, "Int", 0x00000004, "Ptr", hRegEvent, "Int", 1) != 0)
-		{
-			DllCall("advapi32\RegCloseKey", "Ptr", hKey)
-			Break
+		Loop % hKeys.MaxIndex() {
+			If (!hKeys[A_Index]) {
+				If DllCall("advapi32\RegOpenKeyExW", "Ptr", 0x80000002, "Ptr", szKeys.GetAddress(A_Index), "UInt", 0, "UInt", 0x0011, "Ptr*", _) != 0
+					Break 2
+				If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", _, "Int", False, "Int", 0x00000004, "Ptr", handles[A_Index], "Int", 1) != 0
+					Break 2
+				hKeys[A_Index] := _
+			}
 		}
 
 		Loop {
 			r := DllCall("MsgWaitForMultipleObjectsEx", "UInt", dwHandleCount, "Ptr", &handlesArr, "UInt", -1, "UInt", 0x4FF, "UInt", 0x6)
-			If (r < dwHandleCount || r = -1 || !watchReg)
-				Break
 			Sleep -1
+			If (r < dwHandleCount)
+				Break
+			If (r = -1 || !watchReg)
+				Break 2
 		}
 
-		If watchReg
-		{
-			If r = 0
+		r++
+		If (r == PARAMETERS || r == PARAMETERS2) {
+			If DllCall("advapi32\RegQueryValueExW", "Ptr", hKeys[r], "Ptr", r == PARAMETERS2 ? &Type13 : 0, "Ptr", 0, "Ptr", 0, "UInt*", HKEvent, "UInt*", 4) != 0
 			{
-				If DllCall("advapi32\RegQueryValueExW", "Ptr", hKey, "Ptr", 0, "Ptr", 0, "Ptr", 0, "UInt*", HKEvent, "UInt*", 4) != 0
+				DllCall("advapi32\RegCloseKey", "Ptr", hKeys[r]), hKeys[r] := 0
+				RegRead, HKEvent, HKEY_LOCAL_MACHINE, % szKeys[r], % r == PARAMETERS2 ? "Type13" : ""
+			}
+
+			If (HKEvent != oldVals[r]) {
+				If inScriptSession
 				{
-					DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
-					RegRead, HKEvent, HKEY_LOCAL_MACHINE, %watchKey%
-				}
+					newHKEvent := HKEvent ^ oldVals[r]
 
-				If HKEvent = oldHKVal
-					Continue
+					If (r == PARAMETERS) {
+						If (newHKEvent = 268435456 && onScriptDesktop) {
+							If (DllCall("FindWindowW", "WStr", "VirtualConsoleClass", "Ptr", 0)) {
+								Send ^'
+							} Else {
+								/*
+								If (A_IsAdmin) {
+									If (DllCall("FindWindowW", "WStr", "Shell_TrayWnd", "Ptr", 0))
+										ShellRun(ConEmuExe,, ConEmuDir)
+									Else
+										WdcRunTaskAsInteractiveUser(ConEmuExe, ConEmuDir)
+								} Else {
+								*/
+									Run %ConEmuExe%, %ConEmuDir%, UseErrorLevel
+								;}
+							}
+						}
+					} Else {
+						If (newHKEvent == 1048576) {
+							MusicControl("Media_Play_Pause", !onScriptDesktop)
+						} Else If (newHKEvent == 65536) {
+							MusicControl("Media_Next", !onScriptDesktop)
+						} Else If (newHKEvent == 524288) {
+							MusicControl("Media_Prev", !onScriptDesktop)
+						}
+					}
 
-				If (inScriptSession && onScriptDesktop)
-				{
-					newHKEvent := HKEvent ^ oldHKVal
-
-					If (newHKEvent == 1073741824) {
-						Send {Media_Play_Pause}
-					} Else If (newHKEvent == 2147483648) {
-						Send {Media_Next}
-					} Else If (newHKEvent == 536870912) {
-						Send {Media_Prev}
+					If (newHKEvent == 0) {
+						Run *open %A_ScriptFullPath%,, UseErrorLevel
+						DllCall("TerminateProcess", "Ptr", -1, "UInt", 1)
 					}
 				}
 
-				oldHKVal := HKEvent
-				Continue
+				oldVals[r] := HKEvent
 			}
-			
-			If r = 1
-			{
-				onScriptDesktop := IsDesktopActive()
-				,DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
-				Continue
-			}
-		} Else {
-			DllCall("advapi32\RegCloseKey", "Ptr", hKey), hKey := 0
-			Break
+
+			If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKeys[r], "Int", False, "Int", 0x00000004, "Ptr", handles[r], "Int", 1) != 0
+				Break
+
+			Continue
+		}
+
+		If (r == PARAMETERS2 + 1) {
+			onScriptDesktop := IsDesktopActive()
+			Loop % hKeys.MaxIndex()
+				DllCall("advapi32\RegCloseKey", "Ptr", hKeys[A_Index]), hKeys[A_Index] := 0
 		}
 	}
 
-	Loop %dwHandleCount%
-		DllCall("CloseHandle", "Ptr", NumGet(handlesArr, (A_Index - 1) * A_PtrSize, "Ptr"))
+	for _, hKey in hKeys
+		DllCall("CloseHandle", "Ptr", hKey)
+
+	for _, hEvent in handles
+		DllCall("CloseHandle", "Ptr", hEvent)
 	
 	ExitApp 1
 }
@@ -186,8 +217,7 @@ IsDesktopActive()
 	if !VarSetCapacity(currentDesktopName)
 		VarSetCapacity(currentDesktopName, 64)
 
-	If hDesk := DllCall("OpenInputDesktop", "UInt", 0, "Int", False, "UInt", 0, "Ptr")
-	{
+	If hDesk := DllCall("OpenInputDesktop", "UInt", 0, "Int", False, "UInt", 0, "Ptr") {
 		ret := GetUserObjectName(hDesk, currentDesktopName) && currentDesktopName == scriptDesktopName
 		,DllCall("CloseDesktop", "Ptr", hDesk)
 	}
@@ -209,7 +239,6 @@ WM_WTSSESSION_CHANGEcb(wParam, lParam)
 
 	if (wParam == 1) ; WTS_CONSOLE_CONNECT
 		inScriptSession := scriptSessionID == lParam
-
 }
 
 StartWTSMonitoring()
