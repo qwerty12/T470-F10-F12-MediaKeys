@@ -10,3 +10,5 @@ It is assumed you have the Lenovo Power Management driver installed.
 4. Hit Win+R, run `shell:startup` and drop the script in there. If you have installed AHK with UIAccess support, the script will automatially relaunch itself accordingly.
 
 Do Step 2 and backup that key mentioned; this script will stop the original key functions of Fn + F9 to F12.
+
+X250 version here: https://github.com/qwerty12/T470-F10-F12-MediaKeys/blob/528240d5c1d8f162cce5bfd402e6142baaf8dc4c/X250%20Mediakeys.ahk
