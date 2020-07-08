@@ -83,6 +83,21 @@ main()
 	SetTimer, StartMonitoring, -0
 }
 
+StartNotifyChangeKeyValue(hKey, handle)
+{
+	Return DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKey, "Int", False, "Int", 0x00000004, "Ptr", handle, "Int", 1) == 0
+}
+
+InvalidateHKey(idx, ByRef hKeys, szKey)
+{
+	if hKeys[idx]
+		DllCall("advapi32\RegCloseKey", "Ptr", hKeys[idx])
+	If DllCall("advapi32\RegOpenKeyExW", "Ptr", 0x80000002, "Ptr", szKey, "UInt", 0, "UInt", 0x0011, "Ptr*", _) != 0
+		return False
+	hKeys[idx] := _
+	return True
+}
+
 StartMonitoring()
 {
 	global watchReg := True, inScriptSession, onScriptDesktop
@@ -105,7 +120,10 @@ StartMonitoring()
 			ExitApp 1
 		RegRead, _, HKEY_LOCAL_MACHINE, % szKeys[A_Index], % A_Index == PARAMETERS2 ? "Type13" : ""
 		oldVals[A_Index] := _
-		hKeys[A_Index] := 0
+		if (!InvalidateHKey(A_Index, hKeys, szKeys.GetAddress(A_Index)))
+			ExitApp 1
+		if (!StartNotifyChangeKeyValue(hKeys[A_Index], handles[A_Index]))
+			ExitApp 1
 	}
 
 	if ((_ := DllCall("OpenEvent", "UInt", 0x00100000, "Int", False, "Str", "WinSta0_DesktopSwitch", "Ptr")))
@@ -118,46 +136,45 @@ StartMonitoring()
 
 	Loop
 	{
-		Loop % hKeys.MaxIndex() {
-			If (!hKeys[A_Index]) {
-				If DllCall("advapi32\RegOpenKeyExW", "Ptr", 0x80000002, "Ptr", szKeys.GetAddress(A_Index), "UInt", 0, "UInt", 0x0011, "Ptr*", _) != 0
-					Break 2
-				If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", _, "Int", False, "Int", 0x00000004, "Ptr", handles[A_Index], "Int", 1) != 0
-					Break 2
-				hKeys[A_Index] := _
-			}
-		}
-
 		Loop {
 			r := DllCall("MsgWaitForMultipleObjectsEx", "UInt", dwHandleCount, "Ptr", &handlesArr, "UInt", -1, "UInt", 0x4FF, "UInt", 0x6)
-			Sleep -1
-			If (r < dwHandleCount)
-				Break
 			If (r = -1 || !watchReg)
 				Break 2
+			Else If (r < dwHandleCount)
+				Break
+			Sleep -1
 		}
 
 		r++
-		If (r == PARAMETERS || r == PARAMETERS2) {
-			If DllCall("advapi32\RegQueryValueExW", "Ptr", hKeys[r], "Ptr", r == PARAMETERS2 ? &Type13 : 0, "Ptr", 0, "Ptr", 0, "UInt*", HKEvent, "UInt*", 4) != 0
-			{
-				DllCall("advapi32\RegCloseKey", "Ptr", hKeys[r]), hKeys[r] := 0
-				RegRead, HKEvent, HKEY_LOCAL_MACHINE, % szKeys[r], % r == PARAMETERS2 ? "Type13" : ""
-			}
+		If (r <= PARAMETERS2) {
+			isPM2 := r == PARAMETERS2
+			If DllCall("advapi32\RegQueryValueExW", "Ptr", hKeys[r], "Ptr", isPM2 ? &Type13 : 0, "Ptr", 0, "Ptr", 0, "UInt*", HKEvent, "UInt*", 4) != 0
+				Break
 
 			If (HKEvent != oldVals[r]) {
 				If inScriptSession
 				{
 					newHKEvent := HKEvent ^ oldVals[r]
 
-					If (r == PARAMETERS) {
+					If isPM2
+					{
+						If (newHKEvent == 1048576) {
+							Send {Media_Play_Pause}
+						} Else If (newHKEvent == 65536) {
+							Send {Media_Next}
+						} Else If (newHKEvent == 524288) {
+							Send {Media_Prev}
+						}
+					}
+					Else
+					{
 						If (newHKEvent = 268435456 && onScriptDesktop) {
 							If (DllCall("FindWindowW", "WStr", "VirtualConsoleClass", "Ptr", 0)) {
 								Send ^'
 							} Else {
 								/*
 								If (A_IsAdmin) {
-									If (DllCall("FindWindowW", "WStr", "Shell_TrayWnd", "Ptr", 0))Con
+									If (DllCall("FindWindowW", "WStr", "Shell_TrayWnd", "Ptr", 0))
 										ShellRun(ConEmuExe,, ConEmuDir)
 									Else
 										WdcRunTaskAsInteractiveUser(ConEmuExe, ConEmuDir)
@@ -167,35 +184,16 @@ StartMonitoring()
 								;}
 							}
 						}
-					} Else {
-						If (newHKEvent == 1048576) {
-							Send {Media_Play_Pause}
-						} Else If (newHKEvent == 65536) {
-							Send {Media_Next}
-						} Else If (newHKEvent == 524288) {
-							Send {Media_Prev}
-						}
-					}
-
-					If (newHKEvent == 0) {
-						Run *open %A_ScriptFullPath%,, UseErrorLevel
-						DllCall("TerminateProcess", "Ptr", -1, "UInt", 1)
 					}
 				}
 
 				oldVals[r] := HKEvent
 			}
 
-			If DllCall("advapi32\RegNotifyChangeKeyValue", "Ptr", hKeys[r], "Int", False, "Int", 0x00000004, "Ptr", handles[r], "Int", 1) != 0
+			if !StartNotifyChangeKeyValue(hKeys[r], handles[r])
 				Break
-
-			Continue
-		}
-
-		If (r == PARAMETERS2 + 1) {
+		} Else If (r == PARAMETERS2 + 1) {
 			onScriptDesktop := IsDesktopActive()
-			Loop % hKeys.MaxIndex()
-				DllCall("advapi32\RegCloseKey", "Ptr", hKeys[A_Index]), hKeys[A_Index] := 0
 		}
 	}
 
